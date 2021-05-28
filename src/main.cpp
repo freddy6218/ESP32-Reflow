@@ -5,14 +5,13 @@
 #include <ESPAsyncWebServer.h>
 #include "SPIFFS.h"
 #include <Arduino_JSON.h>
-#include <SPI.h>
-#include "Adafruit_MAX31855.h"
+#include "MAX31855.h"
 
 #define SSRPin 12
 
-#define thermoSO 23  //MOSI
+#define thermoDO 23  //MOSI
 #define thermoCS 5   //CS
-#define thermoSCK 18 //CLK 
+#define thermoCLK 18 //CLK 
 
 // WiFi
 const char* ssid = "Frednet";
@@ -24,7 +23,7 @@ AsyncEventSource events("/events");
 JSONVar readings;
 
 // Thermocouple
-Adafruit_MAX31855 thermocouple(thermoSCK, thermoCS, thermoSO);
+MAX31855 tc(thermoCLK, thermoCS, thermoDO);
 
 // Timer variables
 unsigned long lastTime = 0;
@@ -92,13 +91,8 @@ void setup()
   initWiFi();
   initSPIFFS();
 
-  Serial.print("Initializing MAX31855...");
-  if (!thermocouple.begin()) 
-  {
-    Serial.println("ERROR.");
-    while (1) delay(10);
-  }
-  Serial.println("DONE.");
+  // Thermocouple
+  tc.begin();
 
   // Web Server Root URL
   server.on("/", HTTP_GET, [](AsyncWebServerRequest *request){
@@ -161,27 +155,18 @@ void loop()
   }
 
   // DEBUG
-    Serial.print("Status: ");
+  Serial.print("Status: ");
 
-    if(status == statusTypes::started)
-      Serial.println("Started!");    
-    else
-      Serial.println("Stopped");   
+  if(status == statusTypes::started)
+    Serial.println("Started!");    
+  else
+    Serial.println("Stopped");   
 
   // Thermocouple read Temp
-   Serial.print("Internal Temp = ");
-   Serial.println(thermocouple.readInternal());
+  tc.read();
 
-   tempIst = thermocouple.readCelsius();
-   if (isnan(tempIst)) 
-   {
-     Serial.println("Something wrong with thermocouple!");
-   } 
-   else 
-   {
-     Serial.print("C = ");
-     Serial.println(tempIst);
-   }
+  tempIst = tc.getTemperature() * (-1);
+ 
 
   if (tempIst > tempHigh)
     tempHigh = tempIst;
@@ -203,6 +188,8 @@ void loop()
   Serial.print("Highest: ");
   Serial.print(tempHigh);
   Serial.println("°C");
+
+
 
   // Heating Controller
   if (status == statusTypes::started)
