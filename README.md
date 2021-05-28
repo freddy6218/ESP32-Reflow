@@ -2,6 +2,6 @@
 ESP32 SMD-Reflow Controller
 
 # How to
--Open Project in VSCode with Platformio Extension
--Upload Project to ESP32
--Upload Filesystem Image to ESP32
+-Open Project in VSCode with Platformio Extension\n
+-Upload Project to ESP32\n
+-Upload Filesystem Image to ESP32\n
