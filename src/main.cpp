@@ -5,10 +5,8 @@
 #include <ESPAsyncWebServer.h>
 #include "SPIFFS.h"
 #include <Arduino_JSON.h>
-
-#include <Thermocouple.h>
-#include <MAX6675_Thermocouple.h>
-#include <AverageThermocouple.h>
+#include <SPI.h>
+#include "Adafruit_MAX31855.h"
 
 #define SSRPin 12
 
@@ -16,24 +14,17 @@
 #define thermoCS 5   //CS
 #define thermoSCK 18 //CLK 
 
-//  WiFi
+// WiFi
 const char* ssid = "Frednet";
 const char* password = "00556255867124628729";
 
-// Create AsyncWebServer object on port 80
+// Webserver
 AsyncWebServer server(80);
-
-// Create an Event Source on /events
 AsyncEventSource events("/events");
-
-// Json Variable to Hold Sensor Readings
 JSONVar readings;
 
 // Thermocouple
-#define READINGS_NUMBER 10
-#define DELAY_TIME 10
-
-Thermocouple* thermocouple = NULL;
+Adafruit_MAX31855 thermocouple(thermoSCK, thermoCS, thermoSO);
 
 // Timer variables
 unsigned long lastTime = 0;
@@ -42,6 +33,7 @@ unsigned long timerDelay = 2500;
 // Temperature variables
 float tempIst = 0.0, tempSoll = 250.0;
 float tempLow = 1000.0, tempHigh = 0.0;
+
 // Histeresis for Temperature Control in °C
 float tempHist = 1.0;
 
@@ -53,7 +45,6 @@ enum statusTypes
 };
 
 int status = statusTypes::stopped;
-
 
 // Get Sensor Readings and return JSON object
 String getSensorReadings()
@@ -101,12 +92,13 @@ void setup()
   initWiFi();
   initSPIFFS();
 
-  Thermocouple* originThermocouple = new MAX6675_Thermocouple(thermoSCK, thermoCS, thermoSO);
-  thermocouple = new AverageThermocouple(
-    originThermocouple,
-    READINGS_NUMBER,
-    DELAY_TIME
-  );
+  Serial.print("Initializing MAX31855...");
+  if (!thermocouple.begin()) 
+  {
+    Serial.println("ERROR.");
+    while (1) delay(10);
+  }
+  Serial.println("DONE.");
 
   // Web Server Root URL
   server.on("/", HTTP_GET, [](AsyncWebServerRequest *request){
@@ -121,14 +113,12 @@ void setup()
   server.on("/start", HTTP_GET, [](AsyncWebServerRequest *request){
 
     status = statusTypes::started;
-
     request->send(200);
   });
   
   server.on("/stop", HTTP_GET, [](AsyncWebServerRequest *request){
     
     status = statusTypes::stopped;
-
     request->send(200);
   });
 
@@ -159,7 +149,6 @@ void setup()
 
   // MAX6675 stabilize
   delay(500);
-
 }
 
 void loop() 
@@ -180,7 +169,19 @@ void loop()
       Serial.println("Stopped");   
 
   // Thermocouple read Temp
-  tempIst = thermocouple->readCelsius();
+   Serial.print("Internal Temp = ");
+   Serial.println(thermocouple.readInternal());
+
+   tempIst = thermocouple.readCelsius();
+   if (isnan(tempIst)) 
+   {
+     Serial.println("Something wrong with thermocouple!");
+   } 
+   else 
+   {
+     Serial.print("C = ");
+     Serial.println(tempIst);
+   }
 
   if (tempIst > tempHigh)
     tempHigh = tempIst;
@@ -230,5 +231,4 @@ void loop()
   Serial.println();
   // Delay for MAX6675
   delay(1000);
-
 }
