@@ -5,14 +5,21 @@
 #include <ESPAsyncWebServer.h>
 #include "SPIFFS.h"
 #include <Arduino_JSON.h>
-#include "max6675.h"
+#include <Adafruit_ADS1X15.h>
 #include <PID_v1.h>
 
 #define SSRPin 12
 
-#define thermoSO 23  //MOSI
-#define thermoCS 5   //CS
-#define thermoSCK 18 //CLK 
+// Thermistor values
+#define ANALOG_RESOLUTION 26400         // 1 bit = 0.125mV @ 1x gain   +/- 4.096V
+#define THERMISTORNOMINAL 100000        // resistance at 25 degrees C   
+#define TEMPERATURENOMINAL 25           // temp. for nominal resistance (almost always 25 C)
+#define NUMSAMPLES 5                    // # of samples for temp averaging     
+#define BCOEFFICIENT 3950               // The beta coefficient of the thermistor (usually 3000-4000)
+#define SERIESRESISTOR 100300           // the value of the series resistor
+
+int tempSamples[NUMSAMPLES];
+
 
 // ***** TYPE DEFINITIONS *****
 typedef enum REFLOW_STATE
@@ -27,6 +34,11 @@ typedef enum REFLOW_STATE
   REFLOW_STATE_ERROR
 } reflowState_t;
 
+String strDescription[8] =
+{
+"Idle", "Preheat", "Soak", "Reflow", "Cool", "Complete", "!!! TOO HOT !!!", "ERROR"
+};
+
 typedef enum REFLOW_STATUS
 {
   REFLOW_STATUS_OFF,
@@ -36,8 +48,8 @@ typedef enum REFLOW_STATUS
 // ***** CONSTANTS *****
 #define TEMPERATURE_ROOM 50
 #define TEMPERATURE_SOAK_MIN 150
-#define TEMPERATURE_SOAK_MAX 200
-#define TEMPERATURE_REFLOW_MAX 250
+#define TEMPERATURE_SOAK_MAX 183
+#define TEMPERATURE_REFLOW_MAX 220
 #define TEMPERATURE_COOL_MIN 100
 #define SENSOR_SAMPLING_TIME 1000
 #define SOAK_TEMPERATURE_STEP 5
@@ -57,6 +69,7 @@ typedef enum REFLOW_STATUS
 #define PID_KP_REFLOW 300
 #define PID_KI_REFLOW 0.05
 #define PID_KD_REFLOW 350
+
 #define PID_SAMPLE_TIME 1000
 
 
@@ -82,8 +95,9 @@ int timerSeconds;
 
 // Specify PID control interface
 PID reflowOvenPID(&input, &output, &setpoint, kp, ki, kd, DIRECT);
-// Specify MAX6675 thermocouple interface
-MAX6675 thermocouple(thermoSCK, thermoCS, thermoSO);
+
+// 16-Bit ADC
+Adafruit_ADS1115 ads;
 
 // WiFi
 const char* ssid = "Frednet";
@@ -91,19 +105,21 @@ const char* password = "00556255867124628729";
 
 // Webserver
 AsyncWebServer server(80);
-AsyncEventSource events("/events");
+// Create a WebSocket object
+AsyncWebSocket ws("/ws");
+
 JSONVar readings;
+
+// WebSocket message
+String message = "";
 
 // Timer variables (WiFi)
 unsigned long lastTime = 0;
 unsigned long timerDelay = 5000;
 
 // Temperature variables
-float tempIst = 0.0, tempSoll = 80.0;
+float tempIst = 0.0, tempSoll = 0.0;
 float tempLow = 1000.0, tempHigh = 0.0;
-
-// Histeresis for Temperature Control in °C
-float tempHist = 1.0;
 
 // Status variable
 enum statusTypes
@@ -124,6 +140,8 @@ String getSensorReadings()
     readings["status"] = "started";
   else
     readings["status"] = "stopped";
+
+  readings["phase"] = String(strDescription[reflowState]);  
 
   String jsonString = JSON.stringify(readings);
   return jsonString;
@@ -153,12 +171,104 @@ void initWiFi()
   Serial.println(WiFi.localIP());
 }
 
+// Read Temperature from Thermistor
+float readTemp(void)
+{
+  uint8_t i;
+  float average;
+
+  // take N samples in a row, with a slight delay
+  for (i=0; i< NUMSAMPLES; i++) 
+  {
+    //Read from ADS1115 A0
+    tempSamples[i] = ads.readADC_SingleEnded(0);
+    delay(10);
+  }
+  
+  // average all the samples out
+  average = 0;
+  for (i=0; i< NUMSAMPLES; i++) 
+  {
+     average += tempSamples[i];
+  }
+  average /= NUMSAMPLES;
+  
+  // convert the value to resistance
+  average = ANALOG_RESOLUTION / average - 1;
+  average = SERIESRESISTOR / average;
+  
+  float steinhart;
+  steinhart = average / THERMISTORNOMINAL;     // (R/Ro)
+  steinhart = log(steinhart);                  // ln(R/Ro)
+  steinhart /= BCOEFFICIENT;                   // 1/B * ln(R/Ro)
+  steinhart += 1.0 / (TEMPERATURENOMINAL + 273.15); // + (1/To)
+  steinhart = 1.0 / steinhart;                 // Invert
+  steinhart -= 273.15;                         // convert absolute temp to C
+
+  return steinhart;
+}
+
+void notifyClients(String strValue) 
+{
+  ws.textAll(strValue);
+}
+
+void handleWebSocketMessage(void *arg, uint8_t *data, size_t len) {
+  AwsFrameInfo *info = (AwsFrameInfo*)arg;
+  if (info->final && info->index == 0 && info->len == len && info->opcode == WS_TEXT) {
+    data[len] = 0;
+    message = (char*)data;
+    if (message.indexOf("start") >= 0) 
+    {
+      status = statusTypes::started;
+      Serial.println("start");
+      notifyClients(getSensorReadings());
+    }
+    if (message.indexOf("stop") >= 0) 
+    {
+      status = statusTypes::stopped;
+      Serial.println("stop");
+      notifyClients(getSensorReadings());
+    }    
+    if (strcmp((char*)data, "getValues") == 0) {
+      notifyClients(getSensorReadings());
+    }
+  }
+}
+
+void onEvent(AsyncWebSocket *server, AsyncWebSocketClient *client, AwsEventType type, void *arg, uint8_t *data, size_t len) {
+  switch (type) {
+    case WS_EVT_CONNECT:
+      Serial.printf("WebSocket client #%u connected from %s\n", client->id(), client->remoteIP().toString().c_str());
+      break;
+    case WS_EVT_DISCONNECT:
+      Serial.printf("WebSocket client #%u disconnected\n", client->id());
+      break;
+    case WS_EVT_DATA:
+      handleWebSocketMessage(arg, data, len);
+      break;
+    case WS_EVT_PONG:
+    case WS_EVT_ERROR:
+      break;
+  }
+}
+
+void initWebSocket() {
+  ws.onEvent(onEvent);
+  server.addHandler(&ws);
+}
+
 void setup() 
 {
   // Serial port for debugging purposes
   Serial.begin(115200);
-  initWiFi();
   initSPIFFS();
+  initWiFi();
+
+  // ADS1115
+  // 1x gain   +/- 4.096V  1 bit = 0.125mV
+  ads.setGain(GAIN_ONE);
+  ads.begin();
 
   // Set window size
   windowSize = 2000;
@@ -166,6 +276,8 @@ void setup()
   nextCheck = millis();
   // Initialize thermocouple reading variable
   nextRead = millis();
+
+  initWebSocket();
 
   // Web Server Root URL
   server.on("/", HTTP_GET, [](AsyncWebServerRequest *request){
@@ -176,39 +288,7 @@ void setup()
     request->send(200, "image/png", "/favicon.png");
   });
 
-  // Start + Stop
-  server.on("/start", HTTP_GET, [](AsyncWebServerRequest *request){
-    status = statusTypes::started;
-    // PID ON
-
-    request->send(200);
-  });
-  
-  server.on("/stop", HTTP_GET, [](AsyncWebServerRequest *request){
-    status = statusTypes::stopped;
-    // PID OFF
-
-    request->send(200);
-  });
-
   server.serveStatic("/", SPIFFS, "/");
-
-  // Request for the latest sensor readings
-  server.on("/readings", HTTP_GET, [](AsyncWebServerRequest *request){
-    String json = getSensorReadings();
-    request->send(200, "application/json", json);
-    json = String();
-  });
-
-  events.onConnect([](AsyncEventSourceClient *client){
-    if(client->lastId()){
-      Serial.printf("Client reconnected! Last message ID that it got is: %u\n", client->lastId());
-    }
-    // send event with message "hello!", id current millis
-    // and set reconnect delay to 1 second
-    client->send("hello!", NULL, millis(), 10000);
-  });
-  server.addHandler(&events);
 
   // Start server
   server.begin();
@@ -217,19 +297,12 @@ void setup()
   pinMode(SSRPin, OUTPUT);
   digitalWrite(SSRPin,LOW);
 
-  // MAX6675 stabilize
+  // stabilize components
   delay(500);
 }
 
 void loop() 
 {
-  if ((millis() - lastTime) > timerDelay) {
-    // Send Events to the client with the Sensor Readings Every 1 seconds
-    events.send("ping",NULL,millis());
-    events.send(getSensorReadings().c_str(), "new_readings", millis());
-    lastTime = millis();
-  }
-
    // Current time
   unsigned long now;
 
@@ -238,9 +311,10 @@ void loop()
   {
     // Read thermocouple next sampling period
     nextRead += SENSOR_SAMPLING_TIME;
-    // Read current temperature
-	
-		input = thermocouple.readCelsius();
+
+    // Read current temperature + Notify Client
+    notifyClients(getSensorReadings());
+		input = readTemp();
     tempIst = input;
 				
     // If thermocouple problem detected
@@ -452,5 +526,7 @@ void loop()
   {
     digitalWrite(SSRPin, LOW);
   }
+tempSoll = setpoint;
+ws.cleanupClients();
 
 }

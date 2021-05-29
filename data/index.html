@@ -22,7 +22,10 @@
         <div class="card">
           <p class="card-title">Steuerung</p>
           <div id="control" class="control-container">
-            <p class="child-text">Status: <a id="status" >---</a>
+            <p class="child-text">
+              Status: <a id="status" >---</a><br>
+              Reflow Phase: <a id="reflow-state" >---</a>
+            </p>
             <p class="child-text">
             <button class="button button1" onclick="sendRequest('start')">Starten</button>
             <button class="button button2" onclick="sendRequest('stop')">Stoppen</button>
