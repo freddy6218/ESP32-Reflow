@@ -3,13 +3,16 @@ html {
   display: inline-block;
   text-align: center;
 }
+
 h1 {
   font-size: 1.8rem;
   color: white;
 }
+
 p {
   font-size: 1.4rem;
 }
+
 .topnav {
   overflow: hidden;
   background-color: #0A1128;
@@ -25,51 +28,63 @@ p {
 body {
   margin: 0;
 }
+
 .content {
-  padding: 5%;
+  padding: 1% 5% 5%;
 }
+
 .card-grid {
-  max-width: 1200px;
-  margin: 0 auto;
+  width: 80%;
+  margin: 1% auto;
   display: grid;
   gap: 2rem;
-  grid-template-columns: repeat(auto-fit, minmax(3fr, 1fr));
+  grid-template-columns: auto;
 }
+
+.control-grid {
+  width: 80%;
+  margin: 1% auto;
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: 2fr 1fr;
+}
+
 .card {
   background-color: white;
-  box-shadow: 2px 2px 12px 1px rgba(140,140,140,.5);
+  box-shadow: 2px 2px 12px 1px rgba(140, 140, 140, .5);
 }
+
 .card-title {
   font-size: 1.2rem;
   font-weight: bold;
   color: #034078
 }
+
 .chart-container {
-  padding-right: 5%;
-  padding-left: 5%;
+  padding: 5px 3% 3%;
 }
+
 .control-container {
-  padding-left: 5%;
-  padding-right: 5%;
-  padding-bottom: 2%;
+  padding: 5px 3% 3%;
 }
+
 .button {
-  background-color: #4CAF50; /* Green */
+  background-color: #4CAF50;
   border: none;
   color: white;
-  padding: 16px 32px;
+  padding: 5% 5%;
   text-align: center;
   text-decoration: none;
   display: inline-block;
   font-size: 16px;
-  margin: 4px 2px;
   transition-duration: 0.4s;
   cursor: pointer;
+  width: 100%;
 }
 
 .button1 {
-  background-color: #4CAF50; 
-  color: #000000; 
+  background-color: #4CAF50;
+  color: #000000;
   border-radius: 6px;
 }
 
@@ -78,14 +93,64 @@ body {
   color: white;
 }
 
-
 .button2 {
-  background-color: #d43c3c; 
-  color: #000000; 
+  background-color: #d43c3c;
+  color: #000000;
   border-radius: 6px;
 }
 
 .button2:hover {
   background-color: #9c3b3b;
   color: white;
+}
+
+.button3 {
+  background-color: #d43c3c;
+  color: #000000;
+  border-radius: 6px;
+}
+
+.button3:hover {
+  background-color: #9c3b3b;
+  color: white;
+}
+
+/*Tabelle*/
+#properties {
+  table-layout: fixed;
+  font-size: 16px;
+  border-collapse: collapse;
+  width: 100%;
+}
+
+#properties td,
+#properties th {
+  border: 1px solid #ddd;
+  padding: 8px;
+}
+
+#properties tr:nth-child(even) {
+  background-color: #f2f2f2;
+}
+
+#properties tr:hover {
+  background-color: #ddd;
+}
+
+#properties th {
+  padding-top: 12px;
+  padding-bottom: 12px;
+  text-align: left;
+  background-color: #44AAD5;
+  color: white;
+}
+
+.button-container {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+}
+
+.button-item {
+  margin: 0px 3% 3%;
+  text-align: center;
 }

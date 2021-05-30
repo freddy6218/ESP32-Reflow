@@ -1,5 +1,5 @@
 #include <Arduino.h>
-
+#include <EEPROM.h>
 #include <WiFi.h>
 #include <AsyncTCP.h>
 #include <ESPAsyncWebServer.h>
@@ -34,6 +34,12 @@ typedef enum REFLOW_STATE
   REFLOW_STATE_ERROR
 } reflowState_t;
 
+typedef enum REFLOW_PROFILE
+{
+  REFLOW_PROFILE_LEADFREE,
+  REFLOW_PROFILE_LEADED
+} reflowProfile_t;
+
 String strDescription[8] =
 {
 "Idle", "Preheat", "Soak", "Reflow", "Cool", "Complete", "!!! TOO HOT !!!", "ERROR"
@@ -45,16 +51,22 @@ typedef enum REFLOW_STATUS
   REFLOW_STATUS_ON
 } reflowStatus_t;
 
-// ***** CONSTANTS *****
+// ***** GENERAL PROFILE CONSTANTS *****
+#define PROFILE_TYPE_ADDRESS 0
 #define TEMPERATURE_ROOM 50
 #define TEMPERATURE_SOAK_MIN 150
-#define TEMPERATURE_SOAK_MAX 183
-#define TEMPERATURE_REFLOW_MAX 220
 #define TEMPERATURE_COOL_MIN 100
 #define SENSOR_SAMPLING_TIME 1000
 #define SOAK_TEMPERATURE_STEP 5
-#define SOAK_MICRO_PERIOD 9000
-#define DEBOUNCE_PERIOD_MIN 50
+// ***** LEAD FREE PROFILE CONSTANTS *****
+#define TEMPERATURE_SOAK_MAX_LF 200
+#define TEMPERATURE_REFLOW_MAX_LF 250
+#define SOAK_MICRO_PERIOD_LF 9000
+
+// ***** LEADED PROFILE CONSTANTS *****
+#define TEMPERATURE_SOAK_MAX_PB 180
+#define TEMPERATURE_REFLOW_MAX_PB 224
+#define SOAK_MICRO_PERIOD_PB 10000
 
 // ***** PID PARAMETERS *****
 // ***** PRE-HEAT STAGE *****
@@ -84,12 +96,18 @@ int windowSize;
 unsigned long windowStartTime;
 unsigned long nextCheck;
 unsigned long nextRead;
+unsigned long updateLcd;
 unsigned long timerSoak;
 unsigned long buzzerPeriod;
+unsigned char soakTemperatureMax;
+unsigned char reflowTemperatureMax;
+unsigned long soakMicroPeriod;
 // Reflow oven controller state machine state variable
 reflowState_t reflowState;
 // Reflow oven controller status
 reflowStatus_t reflowStatus;
+// Reflow profile type
+reflowProfile_t reflowProfile;
 // Seconds timer
 int timerSeconds;
 
@@ -126,6 +144,14 @@ enum statusTypes
 
 int status = statusTypes::stopped;
 
+enum profileStatus
+{
+  change = 1,
+  noChange = 0
+};
+
+int profile = profileStatus::noChange;
+
 // Get Sensor Readings and return JSON object
 String getSensorReadings()
 {
@@ -137,7 +163,8 @@ String getSensorReadings()
   else
     readings["status"] = "stopped";
 
-  readings["phase"] = String(strDescription[reflowState]);  
+  readings["phase"] = String(strDescription[reflowState]);
+  readings["profile"] = reflowProfile;
 
   String jsonString = JSON.stringify(readings);
   return jsonString;
@@ -209,9 +236,11 @@ void notifyClients(String strValue)
   ws.textAll(strValue);
 }
 
-void handleWebSocketMessage(void *arg, uint8_t *data, size_t len) {
+void handleWebSocketMessage(void *arg, uint8_t *data, size_t len) 
+{
   AwsFrameInfo *info = (AwsFrameInfo*)arg;
-  if (info->final && info->index == 0 && info->len == len && info->opcode == WS_TEXT) {
+  if (info->final && info->index == 0 && info->len == len && info->opcode == WS_TEXT) 
+  {
     data[len] = 0;
     message = (char*)data;
     if (message.indexOf("start") >= 0) 
@@ -226,7 +255,14 @@ void handleWebSocketMessage(void *arg, uint8_t *data, size_t len) {
       Serial.println("stop");
       notifyClients(getSensorReadings());
     }    
-    if (strcmp((char*)data, "getValues") == 0) {
+    if (message.indexOf("profile") >= 0) 
+    {
+      Serial.println("changeProfile");
+      profile = profileStatus::change;
+      notifyClients(getSensorReadings());
+    } 
+    if (strcmp((char*)data, "getValues") == 0) 
+    {
       notifyClients(getSensorReadings());
     }
   }
@@ -265,6 +301,25 @@ void setup()
   // 1x gain   +/- 4.096V  1 bit = 0.125mV
   ads.setGain(GAIN_ONE);
   ads.begin();
+
+  // Check current selected reflow profile
+  unsigned char value = EEPROM.read(PROFILE_TYPE_ADDRESS);
+  if (value == 0) 
+  {
+    // Valid reflow profile value
+    reflowProfile = REFLOW_PROFILE_LEADFREE;
+  }
+  else if (value == 1)
+  {
+    // Valid reflow profile value
+    reflowProfile = REFLOW_PROFILE_LEADED;
+  }
+  else
+  {
+    // Default to lead-free profile
+    EEPROM.write(PROFILE_TYPE_ADDRESS, 0);
+    reflowProfile = REFLOW_PROFILE_LEADFREE;
+  }
 
   // Set window size
   windowSize = 2000;
@@ -313,6 +368,7 @@ void loop()
     tempIst = readTemp();
 				
     // If thermocouple problem detected
+    //TODO: konform mit NTC??
 		if (isnan(tempIst))
 		{
       // Illegal operation
@@ -324,7 +380,7 @@ void loop()
   if (millis() > nextCheck)
   {
     // Check tempIst in the next seconds
-    nextCheck += 1000;
+    nextCheck += SENSOR_SAMPLING_TIME;
     // If reflow process is on going
     if (reflowStatus == REFLOW_STATUS_ON)
     {
@@ -378,6 +434,20 @@ void loop()
         windowStartTime = millis();
         // Ramp up to minimum soaking temperature
         tempSoll = TEMPERATURE_SOAK_MIN;
+        // Load profile specific constant
+        if (reflowProfile == REFLOW_PROFILE_LEADFREE)
+        {
+          soakTemperatureMax = TEMPERATURE_SOAK_MAX_LF;
+          reflowTemperatureMax = TEMPERATURE_REFLOW_MAX_LF;
+          soakMicroPeriod = SOAK_MICRO_PERIOD_LF;
+        }
+        else
+        {
+          soakTemperatureMax = TEMPERATURE_SOAK_MAX_PB;
+          reflowTemperatureMax = TEMPERATURE_REFLOW_MAX_PB;
+          soakMicroPeriod = SOAK_MICRO_PERIOD_PB;
+        }
+
         // Tell the PID to range between 0 and the full window size
         reflowOvenPID.SetOutputLimits(0, windowSize);
         reflowOvenPID.SetSampleTime(PID_SAMPLE_TIME);
@@ -395,7 +465,7 @@ void loop()
     if (tempIst >= TEMPERATURE_SOAK_MIN)
     {
       // Chop soaking period into smaller sub-period
-      timerSoak = millis() + SOAK_MICRO_PERIOD;
+      timerSoak = millis() + soakMicroPeriod;
       // Set less agressive PID parameters for soaking ramp
       reflowOvenPID.SetTunings(PID_KP_SOAK, PID_KI_SOAK, PID_KD_SOAK);
       // Ramp up to first section of soaking temperature
@@ -409,15 +479,15 @@ void loop()
     // If micro soak temperature is achieved       
     if (millis() > timerSoak)
     {
-      timerSoak = millis() + SOAK_MICRO_PERIOD;
+      timerSoak = millis() + soakMicroPeriod;
       // Increment micro tempSoll
       tempSoll += SOAK_TEMPERATURE_STEP;
-      if (tempSoll > TEMPERATURE_SOAK_MAX)
+      if (tempSoll > soakTemperatureMax)
       {
         // Set agressive PID parameters for reflow ramp
         reflowOvenPID.SetTunings(PID_KP_REFLOW, PID_KI_REFLOW, PID_KD_REFLOW);
         // Ramp up to first section of soaking temperature
-        tempSoll = TEMPERATURE_REFLOW_MAX;   
+        tempSoll = reflowTemperatureMax;   
         // Proceed to reflowing state
         reflowState = REFLOW_STATE_REFLOW; 
       }
@@ -427,7 +497,7 @@ void loop()
   case REFLOW_STATE_REFLOW:
     // We need to avoid hovering at peak temperature for too long
     // Crude method that works like a charm and safe for the components
-    if (tempIst >= (TEMPERATURE_REFLOW_MAX - 5))
+    if (tempIst >= (reflowTemperatureMax - 5))
     {
       // Set PID parameters for cooling ramp
       reflowOvenPID.SetTunings(PID_KP_REFLOW, PID_KI_REFLOW, PID_KD_REFLOW);
@@ -498,6 +568,30 @@ void loop()
       reflowState = REFLOW_STATE_IDLE;
     }
   } 
+
+  if (profile == profileStatus::change)
+  {
+    // Only can switch reflow profile during idle
+    if (reflowState == REFLOW_STATE_IDLE)
+    {
+      // reset state
+      profile = profileStatus::noChange;
+      // Currently using lead-free reflow profile
+      if (reflowProfile == REFLOW_PROFILE_LEADFREE)
+      {
+        // Switch to leaded reflow profile
+        reflowProfile = REFLOW_PROFILE_LEADED;
+        EEPROM.write(PROFILE_TYPE_ADDRESS, 1);
+      }
+      // Currently using leaded reflow profile
+      else
+      {
+        // Switch to lead-free profile
+        reflowProfile = REFLOW_PROFILE_LEADFREE;
+        EEPROM.write(PROFILE_TYPE_ADDRESS, 0);
+      }
+    }
+  }
 
   // PID computation and SSR control
   if (reflowStatus == REFLOW_STATUS_ON)
