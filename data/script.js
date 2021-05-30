@@ -65,7 +65,7 @@ var chartT = new Highcharts.Chart({
     minorGridLineWidth: 0,
     gridLineWidth: 0,
     alternateGridColor: null
-  },  
+  },
   credits: {
     enabled: false
   }
@@ -149,21 +149,18 @@ function parseMessage(jsonValue) {
     document.getElementById("profile").innerHTML = 'Sn63 Pb37';
   }
 
-  if (soakMaxTemp != jsonValue[keys[5]])
-  {
+  if (soakMaxTemp != jsonValue[keys[5]]) {
     soakMaxTemp = jsonValue[keys[5]];
     setPlotBands();
   }
-  if (soakMaxTemp != jsonValue[keys[6]])
-  {
+  if (soakMaxTemp != jsonValue[keys[6]]) {
     reflowMaxTemp = jsonValue[keys[6]];
     setPlotBands();
   }
 
 }
 
-function setPlotBands()
-{
+function setPlotBands() {
   chartT.yAxis[0].removePlotBand('preheat');
   chartT.yAxis[0].removePlotBand('soak');
   chartT.yAxis[0].removePlotBand('reflow');
@@ -191,7 +188,7 @@ function setPlotBands()
       style: {
         color: '#606060'
       }
-    } 
+    }
   });
 
   chartT.yAxis[0].addPlotBand({ // Reflow Zone
@@ -204,7 +201,7 @@ function setPlotBands()
       style: {
         color: '#606060'
       }
-    } 
+    }
   });
 
 }

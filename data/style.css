@@ -148,9 +148,26 @@ body {
 .button-container {
   display: grid;
   grid-template-columns: 1fr 1fr;
+  grid-template-rows: auto;
+  grid-template-areas: 
+      'button1 button2'
+      'dblbutton dblbutton'
+      'footer footer';
 }
 
-.button-item {
-  margin: 0px 3% 3%;
+.button-item1 {
+  grid-area: button1;
+  margin: 0px 5px 3%;
+  text-align: center;
+}
+.button-item2 {
+  grid-area: button2;
+  margin: 0px 5px 3%;
+  text-align: center;
+}
+
+.button-double-item {
+  grid-area: dblbutton;
+  margin: 20px 5px 3%;
   text-align: center;
 }
