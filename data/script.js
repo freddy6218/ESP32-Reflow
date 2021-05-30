@@ -3,6 +3,7 @@ var gateway = `ws://${window.location.hostname}/ws`;
 var websocket;
 
 window.addEventListener('load', onload);
+
 // Create Temperature Chart
 var chartT = new Highcharts.Chart({
   chart:{
@@ -33,26 +34,65 @@ var chartT = new Highcharts.Chart({
   plotOptions: 
   {
     line: {
-    dataLabels: { enabled: true },
-    enableMouseTracking: false
+    dataLabels: { enabled: false },
+    states: {hover:{lineWidth:5}},
+    enableMouseTracking: true
     }
     
   },
   title: {
     text: undefined
   },
-
+  xAxis: {
+    type: 'datetime',
+    dateTimeLabelFormats: { second: '%H:%M:%S' }
+  },
   yAxis: {
     title: {
       text: 'Temperatur'
-    }
-  },
+    },
+    minorGridLineWidth: 0,
+        gridLineWidth: 0,
+        alternateGridColor: null,
+        plotBands: [
+          { // Preheating Zone
+            from: 0,
+            to: 150,
+            color: 'rgba(68, 170, 213, 0.1)',
+            label: {
+                text: 'Pre-Heating Zone',
+                style: {
+                    color: '#606060'
+                }
+            }
+        }, 
+        { // Soaking Zone
+            from: 150,
+            to: 183,
+            color: 'rgba(0, 0, 0, 0)',
+            label: {
+                text: 'Soaking Zone',
+                style: {
+                    color: '#606060'
+                }
+            }
+        }, 
+        { // Reflow Zone
+            from: 183,
+            to: 225,
+            color: 'rgba(68, 170, 213, 0.1)',
+            label: {
+                text: 'Reflow Zone',
+                style: {
+                    color: '#606060'
+                }
+            }
+        }]
+    },
   credits: {
     enabled: false
   }
 });
-// Chart Entry #
-var x = 0;
 
 function onload(event) 
 {
@@ -95,7 +135,6 @@ function onMessage(event)
 {
   console.log(event.data);
   var myObj = JSON.parse(event.data);
-  var keys = Object.keys(myObj);
   console.log(myObj);
 
   parseMessage(myObj);
@@ -107,7 +146,7 @@ function parseMessage(jsonValue)
 
   for (var i = 0; i <= 1; i++)
   {
-    x += 1; //(new Date()).getTime();
+    var x = (new Date()).getTime();
     const key = keys[i];
 
     var y = Number(jsonValue[key]);

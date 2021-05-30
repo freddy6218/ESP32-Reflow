@@ -74,8 +74,8 @@ typedef enum REFLOW_STATUS
 
 
 // ***** PID CONTROL VARIABLES *****
-double setpoint;
-double input;
+// Temperature variables also for PID
+double tempIst = 0.0, tempSoll = 0.0;
 double output;
 double kp = PID_KP_PREHEAT;
 double ki = PID_KI_PREHEAT;
@@ -94,7 +94,7 @@ reflowStatus_t reflowStatus;
 int timerSeconds;
 
 // Specify PID control interface
-PID reflowOvenPID(&input, &output, &setpoint, kp, ki, kd, DIRECT);
+PID reflowOvenPID(&tempIst, &output, &tempSoll, kp, ki, kd, DIRECT);
 
 // 16-Bit ADC
 Adafruit_ADS1115 ads;
@@ -116,10 +116,6 @@ String message = "";
 // Timer variables (WiFi)
 unsigned long lastTime = 0;
 unsigned long timerDelay = 5000;
-
-// Temperature variables
-float tempIst = 0.0, tempSoll = 0.0;
-float tempLow = 1000.0, tempHigh = 0.0;
 
 // Status variable
 enum statusTypes
@@ -314,11 +310,10 @@ void loop()
 
     // Read current temperature + Notify Client
     notifyClients(getSensorReadings());
-		input = readTemp();
-    tempIst = input;
+    tempIst = readTemp();
 				
     // If thermocouple problem detected
-		if (isnan(input))
+		if (isnan(tempIst))
 		{
       // Illegal operation
       reflowState = REFLOW_STATE_ERROR;
@@ -328,7 +323,7 @@ void loop()
 
   if (millis() > nextCheck)
   {
-    // Check input in the next seconds
+    // Check tempIst in the next seconds
     nextCheck += 1000;
     // If reflow process is on going
     if (reflowStatus == REFLOW_STATUS_ON)
@@ -340,9 +335,9 @@ void loop()
       // Send temperature and time stamp to serial 
       Serial.print(timerSeconds);
       Serial.print(" ");
-      Serial.print(setpoint);
+      Serial.print(tempSoll);
       Serial.print(" ");
-      Serial.print(input);
+      Serial.print(tempIst);
       Serial.print(" ");
       Serial.println(output);
     }
@@ -366,7 +361,7 @@ void loop()
   {
   case REFLOW_STATE_IDLE:
 		// If oven temperature is still above room temperature
-		if (input >= TEMPERATURE_ROOM)
+		if (tempIst >= TEMPERATURE_ROOM)
 		{
 			reflowState = REFLOW_STATE_TOO_HOT;
 		}
@@ -376,13 +371,13 @@ void loop()
 			if (status == statusTypes::started)
 			{
         // Send header for CSV file
-        Serial.println("Time Setpoint Input Output");
+        Serial.println("Time tempSoll tempIst Output");
         // Intialize seconds timer for serial debug information
         timerSeconds = 0;
         // Initialize PID control window starting time
         windowStartTime = millis();
         // Ramp up to minimum soaking temperature
-        setpoint = TEMPERATURE_SOAK_MIN;
+        tempSoll = TEMPERATURE_SOAK_MIN;
         // Tell the PID to range between 0 and the full window size
         reflowOvenPID.SetOutputLimits(0, windowSize);
         reflowOvenPID.SetSampleTime(PID_SAMPLE_TIME);
@@ -397,14 +392,14 @@ void loop()
   case REFLOW_STATE_PREHEAT:
     reflowStatus = REFLOW_STATUS_ON;
     // If minimum soak temperature is achieve       
-    if (input >= TEMPERATURE_SOAK_MIN)
+    if (tempIst >= TEMPERATURE_SOAK_MIN)
     {
       // Chop soaking period into smaller sub-period
       timerSoak = millis() + SOAK_MICRO_PERIOD;
       // Set less agressive PID parameters for soaking ramp
       reflowOvenPID.SetTunings(PID_KP_SOAK, PID_KI_SOAK, PID_KD_SOAK);
       // Ramp up to first section of soaking temperature
-      setpoint = TEMPERATURE_SOAK_MIN + SOAK_TEMPERATURE_STEP;   
+      tempSoll = TEMPERATURE_SOAK_MIN + SOAK_TEMPERATURE_STEP;   
       // Proceed to soaking state
       reflowState = REFLOW_STATE_SOAK; 
     }
@@ -415,14 +410,14 @@ void loop()
     if (millis() > timerSoak)
     {
       timerSoak = millis() + SOAK_MICRO_PERIOD;
-      // Increment micro setpoint
-      setpoint += SOAK_TEMPERATURE_STEP;
-      if (setpoint > TEMPERATURE_SOAK_MAX)
+      // Increment micro tempSoll
+      tempSoll += SOAK_TEMPERATURE_STEP;
+      if (tempSoll > TEMPERATURE_SOAK_MAX)
       {
         // Set agressive PID parameters for reflow ramp
         reflowOvenPID.SetTunings(PID_KP_REFLOW, PID_KI_REFLOW, PID_KD_REFLOW);
         // Ramp up to first section of soaking temperature
-        setpoint = TEMPERATURE_REFLOW_MAX;   
+        tempSoll = TEMPERATURE_REFLOW_MAX;   
         // Proceed to reflowing state
         reflowState = REFLOW_STATE_REFLOW; 
       }
@@ -432,12 +427,12 @@ void loop()
   case REFLOW_STATE_REFLOW:
     // We need to avoid hovering at peak temperature for too long
     // Crude method that works like a charm and safe for the components
-    if (input >= (TEMPERATURE_REFLOW_MAX - 5))
+    if (tempIst >= (TEMPERATURE_REFLOW_MAX - 5))
     {
       // Set PID parameters for cooling ramp
       reflowOvenPID.SetTunings(PID_KP_REFLOW, PID_KI_REFLOW, PID_KD_REFLOW);
       // Ramp down to minimum cooling temperature
-      setpoint = TEMPERATURE_COOL_MIN;   
+      tempSoll = TEMPERATURE_COOL_MIN;   
       // Proceed to cooling state
       reflowState = REFLOW_STATE_COOL; 
     }
@@ -445,7 +440,7 @@ void loop()
 
   case REFLOW_STATE_COOL:
     // If minimum cool temperature is achieve       
-    if (input <= TEMPERATURE_COOL_MIN)
+    if (tempIst <= TEMPERATURE_COOL_MIN)
     {
       // Retrieve current time for buzzer usage
       buzzerPeriod = millis() + 1000;
@@ -468,7 +463,7 @@ void loop()
 	
 	case REFLOW_STATE_TOO_HOT:
 		// If oven temperature drops below room temperature
-		if (input < TEMPERATURE_ROOM)
+		if (tempIst < TEMPERATURE_ROOM)
 		{
 			// Ready to reflow
 			reflowState = REFLOW_STATE_IDLE;
@@ -477,7 +472,7 @@ void loop()
 		
   case REFLOW_STATE_ERROR:
     // If thermocouple problem is still present
-			if (isnan(input))
+			if (isnan(tempIst))
 		{
       // Wait until thermocouple wire is connected
       reflowState = REFLOW_STATE_ERROR; 
@@ -526,7 +521,7 @@ void loop()
   {
     digitalWrite(SSRPin, LOW);
   }
-tempSoll = setpoint;
-ws.cleanupClients();
 
+// WebSockets
+ws.cleanupClients();
 }
