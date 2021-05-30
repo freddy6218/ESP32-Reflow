@@ -166,6 +166,9 @@ String getSensorReadings()
   readings["phase"] = String(strDescription[reflowState]);
   readings["profile"] = reflowProfile;
 
+  readings["soakMaxTemp"] = soakTemperatureMax;
+  readings["reflowMaxTemp"] = reflowTemperatureMax;
+
   String jsonString = JSON.stringify(readings);
   return jsonString;
 }
@@ -319,6 +322,20 @@ void setup()
     // Default to lead-free profile
     EEPROM.write(PROFILE_TYPE_ADDRESS, 0);
     reflowProfile = REFLOW_PROFILE_LEADFREE;
+  }
+
+  // Load profile specific constant
+  if (reflowProfile == REFLOW_PROFILE_LEADFREE)
+  {
+    soakTemperatureMax = TEMPERATURE_SOAK_MAX_LF;
+    reflowTemperatureMax = TEMPERATURE_REFLOW_MAX_LF;
+    soakMicroPeriod = SOAK_MICRO_PERIOD_LF;
+  }
+  else
+  {
+    soakTemperatureMax = TEMPERATURE_SOAK_MAX_PB;
+    reflowTemperatureMax = TEMPERATURE_REFLOW_MAX_PB;
+    soakMicroPeriod = SOAK_MICRO_PERIOD_PB;
   }
 
   // Set window size
@@ -590,6 +607,21 @@ void loop()
         reflowProfile = REFLOW_PROFILE_LEADFREE;
         EEPROM.write(PROFILE_TYPE_ADDRESS, 0);
       }
+
+      // Load profile specific constant
+      if (reflowProfile == REFLOW_PROFILE_LEADFREE)
+      {
+        soakTemperatureMax = TEMPERATURE_SOAK_MAX_LF;
+        reflowTemperatureMax = TEMPERATURE_REFLOW_MAX_LF;
+        soakMicroPeriod = SOAK_MICRO_PERIOD_LF;
+      }
+      else
+      {
+        soakTemperatureMax = TEMPERATURE_SOAK_MAX_PB;
+        reflowTemperatureMax = TEMPERATURE_REFLOW_MAX_PB;
+        soakMicroPeriod = SOAK_MICRO_PERIOD_PB;
+      }
+
     }
   }
 

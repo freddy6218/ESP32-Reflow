@@ -105,13 +105,13 @@ body {
 }
 
 .button3 {
-  background-color: #d43c3c;
+  background-color: #cf8e00;
   color: #000000;
   border-radius: 6px;
 }
 
 .button3:hover {
-  background-color: #9c3b3b;
+  background-color: #a57100;
   color: white;
 }
 

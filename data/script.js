@@ -1,6 +1,8 @@
 var gateway = `ws://${window.location.hostname}/ws`;
 
 var websocket;
+var soakMaxTemp = 0;
+var reflowMaxTemp = 0;
 
 window.addEventListener('load', onload);
 
@@ -10,7 +12,7 @@ var chartT = new Highcharts.Chart({
     renderTo: 'chart-temperature'
   },
   series: [{
-      name: 'Ist-Temperatur',
+      name: 'Aktuelle Temperatur',
       type: 'line',
       color: '#101D42',
       marker: {
@@ -30,6 +32,9 @@ var chartT = new Highcharts.Chart({
       }
     },
   ],
+  tooltip: {
+    valueSuffix: ' °C'
+  },
   plotOptions: {
     line: {
       dataLabels: {
@@ -59,42 +64,8 @@ var chartT = new Highcharts.Chart({
     },
     minorGridLineWidth: 0,
     gridLineWidth: 0,
-    alternateGridColor: null,
-    plotBands: [{ // Preheating Zone
-        from: 0,
-        to: 150,
-        color: 'rgba(68, 170, 213, 0.1)',
-        label: {
-          text: 'Pre-Heating Zone',
-          style: {
-            color: '#606060'
-          }
-        }
-      },
-      { // Soaking Zone
-        from: 150,
-        to: 183,
-        color: 'rgba(0, 0, 0, 0)',
-        label: {
-          text: 'Soaking Zone',
-          style: {
-            color: '#606060'
-          }
-        }
-      },
-      { // Reflow Zone
-        from: 183,
-        to: 225,
-        color: 'rgba(68, 170, 213, 0.1)',
-        label: {
-          text: 'Reflow Zone',
-          style: {
-            color: '#606060'
-          }
-        }
-      }
-    ]
-  },
+    alternateGridColor: null
+  },  
   credits: {
     enabled: false
   }
@@ -130,7 +101,6 @@ function sendRequest(message) {
   console.log(message);
   websocket.send(message);
 }
-
 
 function onMessage(event) {
   var myObj = JSON.parse(event.data);
@@ -172,13 +142,69 @@ function parseMessage(jsonValue) {
   // Bleifrei
   if (jsonValue[keys[4]] == '0') {
     document.getElementById("profile").innerHTML = 'Sn99 Ag0,3 Cu0,7';
-    chartT.plotBands[0].to = 15;
   }
 
   // Verbleit
   if (jsonValue[keys[4]] == '1') {
     document.getElementById("profile").innerHTML = 'Sn63 Pb37';
-    chartT.plotBands(0).to = 5;
   }
+
+  if (soakMaxTemp != jsonValue[keys[5]])
+  {
+    soakMaxTemp = jsonValue[keys[5]];
+    setPlotBands();
+  }
+  if (soakMaxTemp != jsonValue[keys[6]])
+  {
+    reflowMaxTemp = jsonValue[keys[6]];
+    setPlotBands();
+  }
+
+}
+
+function setPlotBands()
+{
+  chartT.yAxis[0].removePlotBand('preheat');
+  chartT.yAxis[0].removePlotBand('soak');
+  chartT.yAxis[0].removePlotBand('reflow');
+
+  chartT.yAxis[0].addPlotBand({ // Preheating Zone
+    from: 0,
+    to: 150,
+    color: 'rgba(68, 170, 213, 0.1)',
+    id: 'preheat',
+    label: {
+      text: 'Pre-Heating Zone',
+      style: {
+        color: '#606060'
+      }
+    }
+  });
+
+  chartT.yAxis[0].addPlotBand({ // Soaking Zone
+    from: 150,
+    to: soakMaxTemp,
+    color: 'rgba(0, 0, 0, 0)',
+    id: 'soak',
+    label: {
+      text: 'Soaking Zone',
+      style: {
+        color: '#606060'
+      }
+    } 
+  });
+
+  chartT.yAxis[0].addPlotBand({ // Reflow Zone
+    from: soakMaxTemp,
+    to: reflowMaxTemp,
+    color: 'rgba(68, 170, 213, 0.1)',
+    id: 'reflow',
+    label: {
+      text: 'Reflow Zone',
+      style: {
+        color: '#606060'
+      }
+    } 
+  });
 
 }
