@@ -473,6 +473,10 @@ void loop()
         // Proceed to preheat stage
         reflowState = REFLOW_STATE_PREHEAT;
       }
+      else
+      {
+        tempSoll = 0.0;
+      }
     }
     break;
 
@@ -572,7 +576,7 @@ void loop()
     break;    
   }    
 
-  // If switch 1 is pressed
+  // STOP
   if (status == statusTypes::stopped)
   {
     // If currently reflow process is on going
@@ -586,6 +590,7 @@ void loop()
     }
   } 
 
+  // Profile change
   if (profile == profileStatus::change)
   {
     // Only can switch reflow profile during idle
