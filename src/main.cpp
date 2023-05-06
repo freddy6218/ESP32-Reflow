@@ -118,8 +118,8 @@ PID reflowOvenPID(&tempIst, &output, &tempSoll, kp, ki, kd, DIRECT);
 Adafruit_ADS1115 ads;
 
 // WiFi
-const char* ssid = "Frednet";
-const char* password = "00556255867124628729";
+const char* ssid = "SSID";
+const char* password = "PASSWORD";
 
 // Webserver
 AsyncWebServer server(80);
